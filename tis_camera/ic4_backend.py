@@ -149,65 +149,127 @@ def _safe_find_enumeration(prop_map, prop_id: str):
         return None
 
 
-def enumerate_live_modes(prop_map) -> list[ModeInfo]:
-    pixel_formats: list[str] = []
-    pixel_format_prop = _safe_find_enumeration(prop_map, "PixelFormat")
-    if pixel_format_prop is not None:
-        pixel_formats = [entry.name for entry in pixel_format_prop.entries]
+def _safe_prop_increment(prop):
+    try:
+        return prop.increment
+    except Exception:
+        return None
 
-    width_prop = _safe_find_integer(prop_map, "Width")
-    height_prop = _safe_find_integer(prop_map, "Height")
-    fps_prop = _safe_find_float(prop_map, "AcquisitionFrameRate")
 
-    modes: list[ModeInfo] = []
-
-    if width_prop and height_prop and fps_prop:
-        width_values = {width_prop.maximum, width_prop.maximum // 2, 1280, 1024, 800, 640}
-        height_values = {height_prop.maximum, height_prop.maximum // 2, 1024, 768, 600, 480}
-        fps_values = {
-            fps_prop.maximum,
-            min(60.0, fps_prop.maximum),
-            min(30.0, fps_prop.maximum),
-            min(15.0, fps_prop.maximum),
+def _safe_integer_limits(prop) -> dict | None:
+    if prop is None:
+        return None
+    try:
+        return {
+            "min": int(prop.minimum),
+            "max": int(prop.maximum),
+            "increment": _safe_prop_increment(prop),
         }
+    except Exception:
+        return None
 
-        seen: set[str] = set()
-        for width in sorted(width_values):
-            width = _align_integer_property(
-                max(width_prop.minimum, min(width_prop.maximum, width)),
-                width_prop,
-            )
-            for height in sorted(height_values):
-                height = _align_integer_property(
-                    max(height_prop.minimum, min(height_prop.maximum, height)),
-                    height_prop,
+
+def _safe_float_limits(prop) -> dict | None:
+    if prop is None:
+        return None
+    try:
+        return {
+            "min": float(prop.minimum),
+            "max": float(prop.maximum),
+            "increment": _safe_prop_increment(prop),
+        }
+    except Exception:
+        return None
+
+
+def _safe_integer_range(prop) -> tuple[int, int] | None:
+    if prop is None:
+        return None
+    try:
+        return int(prop.minimum), int(prop.maximum)
+    except Exception:
+        return None
+
+
+def _safe_float_range(prop) -> tuple[float, float] | None:
+    if prop is None:
+        return None
+    try:
+        return float(prop.minimum), float(prop.maximum)
+    except Exception:
+        return None
+
+
+def enumerate_live_modes(prop_map) -> list[ModeInfo]:
+    try:
+        pixel_formats: list[str] = []
+        pixel_format_prop = _safe_find_enumeration(prop_map, "PixelFormat")
+        if pixel_format_prop is not None:
+            pixel_formats = [entry.name for entry in pixel_format_prop.entries]
+
+        width_prop = _safe_find_integer(prop_map, "Width")
+        height_prop = _safe_find_integer(prop_map, "Height")
+        fps_prop = _safe_find_float(prop_map, "AcquisitionFrameRate")
+
+        width_range = _safe_integer_range(width_prop)
+        height_range = _safe_integer_range(height_prop)
+        fps_range = _safe_float_range(fps_prop)
+
+        modes: list[ModeInfo] = []
+
+        if width_range and height_range and fps_range:
+            width_min, width_max = width_range
+            height_min, height_max = height_range
+            fps_min, fps_max = fps_range
+
+            width_values = {width_max, width_max // 2, 1280, 1024, 800, 640}
+            height_values = {height_max, height_max // 2, 1024, 768, 600, 480}
+            fps_values = {
+                fps_max,
+                min(60.0, fps_max),
+                min(30.0, fps_max),
+                min(15.0, fps_max),
+            }
+
+            seen: set[str] = set()
+            for width in sorted(width_values):
+                width = _align_integer_property(
+                    max(width_min, min(width_max, width)),
+                    width_prop,
                 )
-                for fps in sorted(fps_values, reverse=True):
-                    fps = max(fps_prop.minimum, min(fps_prop.maximum, fps))
-                    mode = CaptureMode(width=width, height=height, fps=fps)
-                    key = mode.as_string()
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    modes.append(
-                        ModeInfo(
-                            mode=mode,
-                            source="device-range",
-                            pixel_formats=tuple(pixel_formats or DMM_37UX252_ML.pixel_formats),
-                        )
+                for height in sorted(height_values):
+                    height = _align_integer_property(
+                        max(height_min, min(height_max, height)),
+                        height_prop,
                     )
+                    for fps in sorted(fps_values, reverse=True):
+                        fps = max(fps_min, min(fps_max, fps))
+                        mode = CaptureMode(width=width, height=height, fps=fps)
+                        key = mode.as_string()
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        modes.append(
+                            ModeInfo(
+                                mode=mode,
+                                source="device-range",
+                                pixel_formats=tuple(pixel_formats or DMM_37UX252_ML.pixel_formats),
+                            )
+                        )
 
-    if not modes:
-        modes = [
-            ModeInfo(
-                mode=mode,
-                source="preset",
-                pixel_formats=tuple(DMM_37UX252_ML.pixel_formats),
-            )
-            for mode in static_preset_modes()
-        ]
+        if modes:
+            return modes
+    except Exception:
+        pass
 
-    return modes
+    return [
+        ModeInfo(
+            mode=mode,
+            source="preset",
+            pixel_formats=tuple(DMM_37UX252_ML.pixel_formats),
+        )
+        for mode in static_preset_modes()
+    ]
 
 
 def resolve_pixel_format(ic4, pixel_format: str):
@@ -238,9 +300,14 @@ def apply_capture_settings(
         pass
 
     fps_prop = _safe_find_float(prop_map, ic4.PropId.ACQUISITION_FRAME_RATE)
-    if fps_prop is not None:
-        target_fps = max(fps_prop.minimum, min(fps_prop.maximum, mode.fps))
-        prop_map.set_value(ic4.PropId.ACQUISITION_FRAME_RATE, target_fps)
+    fps_range = _safe_float_range(fps_prop)
+    if fps_range is not None:
+        fps_min, fps_max = fps_range
+        target_fps = max(fps_min, min(fps_max, mode.fps))
+        try:
+            prop_map.set_value(ic4.PropId.ACQUISITION_FRAME_RATE, target_fps)
+        except Exception:
+            pass
 
     prop_map.set_value(ic4.PropId.EXPOSURE_AUTO, "Off")
     prop_map.set_value(ic4.PropId.EXPOSURE_TIME, float(exposure_us))
@@ -336,34 +403,10 @@ def probe_device(serial: str | None = None, ic4=None) -> tuple[ConnectedDeviceIn
         pixel_format_prop = _safe_find_enumeration(prop_map, "PixelFormat")
 
         limits = {
-            "width": None
-            if width_prop is None
-            else {
-                "min": width_prop.minimum,
-                "max": width_prop.maximum,
-                "increment": width_prop.increment,
-            },
-            "height": None
-            if height_prop is None
-            else {
-                "min": height_prop.minimum,
-                "max": height_prop.maximum,
-                "increment": height_prop.increment,
-            },
-            "fps": None
-            if fps_prop is None
-            else {
-                "min": fps_prop.minimum,
-                "max": fps_prop.maximum,
-                "increment": fps_prop.increment,
-            },
-            "exposure_us": None
-            if exposure_prop is None
-            else {
-                "min": exposure_prop.minimum,
-                "max": exposure_prop.maximum,
-                "increment": exposure_prop.increment,
-            },
+            "width": _safe_integer_limits(width_prop),
+            "height": _safe_integer_limits(height_prop),
+            "fps": _safe_float_limits(fps_prop),
+            "exposure_us": _safe_float_limits(exposure_prop),
             "pixel_formats": []
             if pixel_format_prop is None
             else [entry.name for entry in pixel_format_prop.entries],
