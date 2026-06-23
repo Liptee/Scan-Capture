@@ -5,7 +5,7 @@ import struct
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, Union
 
 RAW_MAGIC = b"TISRAW\x01"
 
@@ -34,15 +34,16 @@ class RawCaptureMetadata:
 
 
 def write_raw_capture(
-    output_path: Path,
+    output_path: Union[str, Path],
     frames: Sequence[bytes],
     metadata: RawCaptureMetadata,
 ) -> tuple[Path, Path]:
-    output_path = output_path.expanduser().resolve()
+    output_path = Path(output_path).expanduser().resolve()
     if output_path.suffix.lower() != ".raw":
         output_path = output_path.with_suffix(".raw")
 
     meta_path = output_path.with_suffix(".raw.json")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     header = struct.pack(
         "<8sIIIIIddI",

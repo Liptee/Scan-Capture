@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Sequence
 
 from .device_info import DMM_37UX252_ML, DeviceSpec
@@ -10,7 +11,7 @@ from .modes import CaptureMode, static_preset_modes
 from .raw_writer import RawCaptureMetadata, utc_now_iso, write_raw_capture
 
 SUPPORTED_PLATFORMS = ("win32", "linux", "linux2")
-BACKEND_REVISION = "2025-06-23-fps-no-metadata"
+BACKEND_REVISION = "2025-06-23-raw-path"
 
 
 class PlatformNotSupportedError(RuntimeError):
@@ -366,6 +367,7 @@ def capture_to_raw(
         pitch = first_image.pitch
         timestamps = [image.meta_data.device_timestamp_ns for image in images]
         frame_numbers = [image.meta_data.device_frame_number for image in images]
+        del images
 
         bits_per_pixel = 16 if pixel_format.lower() in {"mono16", "16"} else 8
         metadata = RawCaptureMetadata(
@@ -387,7 +389,7 @@ def capture_to_raw(
             frame_numbers=frame_numbers,
         )
 
-        return write_raw_capture(output_path, frames, metadata)
+        return write_raw_capture(Path(output_path), frames, metadata)
     finally:
         try:
             grabber.stream_stop()
