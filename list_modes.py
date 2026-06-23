@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             print("No cameras found", file=sys.stderr)
             return 1
 
-        connected, modes, limits = probe_device(serial=args.serial)
+        connected, modes, limits = probe_device(serial=args.serial, ic4=ic4)
         payload = {
             "device": {
                 "model": connected.model,

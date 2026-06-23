@@ -66,6 +66,30 @@ def shutdown_library(ic4) -> None:
     ic4.Library.exit()
 
 
+def _read_vendor_from_property_map(prop_map, ic4, default: str) -> str:
+    try:
+        value = prop_map.get_value(ic4.PropId.DEVICE_VENDOR_NAME)
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    return default
+
+
+def _align_integer_property(value: int, prop) -> int:
+    if prop is None:
+        return value
+    try:
+        increment_mode = prop.increment_mode
+        mode_name = increment_mode.name if hasattr(increment_mode, "name") else str(increment_mode)
+        if mode_name == "INCREMENT":
+            increment = max(1, int(prop.increment))
+            value -= value % increment
+    except Exception:
+        pass
+    return value
+
+
 def list_connected_devices(ic4) -> list[ConnectedDeviceInfo]:
     devices: list[ConnectedDeviceInfo] = []
     for device in ic4.DeviceEnum.devices():
@@ -75,7 +99,7 @@ def list_connected_devices(ic4) -> list[ConnectedDeviceInfo]:
             ConnectedDeviceInfo(
                 model=model,
                 serial=serial,
-                vendor=device.vendor_name or DMM_37UX252_ML.vendor,
+                vendor=DMM_37UX252_ML.vendor,
                 spec=DMM_37UX252_ML,
             )
         )
@@ -149,13 +173,15 @@ def enumerate_live_modes(prop_map) -> list[ModeInfo]:
 
         seen: set[str] = set()
         for width in sorted(width_values):
-            width = max(width_prop.minimum, min(width_prop.maximum, width))
-            if width_prop.increment_mode.name == "INCREMENT":
-                width -= width % max(1, width_prop.increment)
+            width = _align_integer_property(
+                max(width_prop.minimum, min(width_prop.maximum, width)),
+                width_prop,
+            )
             for height in sorted(height_values):
-                height = max(height_prop.minimum, min(height_prop.maximum, height))
-                if height_prop.increment_mode.name == "INCREMENT":
-                    height -= height % max(1, height_prop.increment)
+                height = _align_integer_property(
+                    max(height_prop.minimum, min(height_prop.maximum, height)),
+                    height_prop,
+                )
                 for fps in sorted(fps_values, reverse=True):
                     fps = max(fps_prop.minimum, min(fps_prop.maximum, fps))
                     mode = CaptureMode(width=width, height=height, fps=fps)
@@ -292,8 +318,10 @@ def capture_to_raw(
         shutdown_library(ic4)
 
 
-def probe_device(serial: str | None = None) -> tuple[ConnectedDeviceInfo, list[ModeInfo], dict]:
-    ic4 = init_library()
+def probe_device(serial: str | None = None, ic4=None) -> tuple[ConnectedDeviceInfo, list[ModeInfo], dict]:
+    owns_library = ic4 is None
+    if ic4 is None:
+        ic4 = init_library()
     grabber = ic4.Grabber()
     try:
         device_info = open_device(ic4, serial=serial)
@@ -344,7 +372,7 @@ def probe_device(serial: str | None = None) -> tuple[ConnectedDeviceInfo, list[M
         connected = ConnectedDeviceInfo(
             model=device_info.model_name or DMM_37UX252_ML.model,
             serial=device_info.serial or "unknown",
-            vendor=device_info.vendor_name or DMM_37UX252_ML.vendor,
+            vendor=_read_vendor_from_property_map(prop_map, ic4, DMM_37UX252_ML.vendor),
             spec=DMM_37UX252_ML,
         )
         return connected, modes, limits
@@ -353,4 +381,5 @@ def probe_device(serial: str | None = None) -> tuple[ConnectedDeviceInfo, list[M
             grabber.device_close()
         except Exception:
             pass
-        shutdown_library(ic4)
+        if owns_library:
+            shutdown_library(ic4)
