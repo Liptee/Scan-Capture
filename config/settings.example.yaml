@@ -1,0 +1,25 @@
+server:
+  host: 0.0.0.0
+  port: 8000
+
+paths:
+  data_dir: data
+  recordings_dir: data/recordings
+  hsi_dir: data/hsi
+  exports_dir: data/exports
+  calibration_dir: data/calibration
+  jobs_dir: data/jobs
+
+capture:
+  default_pixel_format: mono16
+  preview_max_fps: 15
+  jpeg_quality: 80
+
+hsi:
+  backend: mock
+  default_calibration_profile: default
+  worker_processes: 1
+
+cors:
+  origins:
+    - http://localhost:5173

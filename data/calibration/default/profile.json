@@ -1,0 +1,8 @@
+{
+  "name": "default",
+  "description": "Placeholder calibration profile — replace with library-provided data",
+  "roi": "roi.json",
+  "wavelengths": "wavelengths.json",
+  "coefficients_dir": "coefficients/",
+  "hsi_builder_config": {}
+}

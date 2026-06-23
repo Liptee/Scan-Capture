@@ -1,0 +1,25 @@
+# Runtime data (see docs/DATA_MODELS.md)
+data/recordings/*
+data/hsi/*
+data/exports/*
+data/jobs/*
+!data/**/.gitkeep
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Config
+config/settings.yaml
+.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
