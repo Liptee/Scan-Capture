@@ -10,6 +10,7 @@ from .modes import CaptureMode, static_preset_modes
 from .raw_writer import RawCaptureMetadata, utc_now_iso, write_raw_capture
 
 SUPPORTED_PLATFORMS = ("win32", "linux", "linux2")
+BACKEND_REVISION = "2025-06-23-fps-no-metadata"
 
 
 class PlatformNotSupportedError(RuntimeError):
@@ -76,18 +77,49 @@ def _read_vendor_from_property_map(prop_map, ic4, default: str) -> str:
     return default
 
 
+def _prop_increment_mode_name(prop) -> str | None:
+    try:
+        increment_mode = prop.increment_mode
+        return increment_mode.name if hasattr(increment_mode, "name") else str(increment_mode)
+    except Exception:
+        return None
+
+
+def _safe_prop_increment(prop):
+    if _prop_increment_mode_name(prop) != "INCREMENT":
+        return None
+    try:
+        return prop.increment
+    except Exception:
+        return None
+
+
 def _align_integer_property(value: int, prop) -> int:
     if prop is None:
         return value
+    if _prop_increment_mode_name(prop) != "INCREMENT":
+        return value
     try:
-        increment_mode = prop.increment_mode
-        mode_name = increment_mode.name if hasattr(increment_mode, "name") else str(increment_mode)
-        if mode_name == "INCREMENT":
-            increment = max(1, int(prop.increment))
-            value -= value % increment
+        increment = max(1, int(prop.increment))
+        value -= value % increment
     except Exception:
         pass
     return value
+
+
+def _fps_limits_from_spec() -> dict:
+    return {
+        "min": 1.0,
+        "max": float(DMM_37UX252_ML.max_fps),
+        "increment": None,
+    }
+
+
+def _set_frame_rate(prop_map, ic4, fps: float) -> None:
+    try:
+        prop_map.try_set_value(ic4.PropId.ACQUISITION_FRAME_RATE, float(fps))
+    except Exception:
+        pass
 
 
 def list_connected_devices(ic4) -> list[ConnectedDeviceInfo]:
@@ -149,13 +181,6 @@ def _safe_find_enumeration(prop_map, prop_id: str):
         return None
 
 
-def _safe_prop_increment(prop):
-    try:
-        return prop.increment
-    except Exception:
-        return None
-
-
 def _safe_integer_limits(prop) -> dict | None:
     if prop is None:
         return None
@@ -209,18 +234,16 @@ def enumerate_live_modes(prop_map) -> list[ModeInfo]:
 
         width_prop = _safe_find_integer(prop_map, "Width")
         height_prop = _safe_find_integer(prop_map, "Height")
-        fps_prop = _safe_find_float(prop_map, "AcquisitionFrameRate")
 
         width_range = _safe_integer_range(width_prop)
         height_range = _safe_integer_range(height_prop)
-        fps_range = _safe_float_range(fps_prop)
+        fps_min, fps_max = 1.0, float(DMM_37UX252_ML.max_fps)
 
         modes: list[ModeInfo] = []
 
-        if width_range and height_range and fps_range:
+        if width_range and height_range:
             width_min, width_max = width_range
             height_min, height_max = height_range
-            fps_min, fps_max = fps_range
 
             width_values = {width_max, width_max // 2, 1280, 1024, 800, 640}
             height_values = {height_max, height_max // 2, 1024, 768, 600, 480}
@@ -299,15 +322,7 @@ def apply_capture_settings(
     except Exception:
         pass
 
-    fps_prop = _safe_find_float(prop_map, ic4.PropId.ACQUISITION_FRAME_RATE)
-    fps_range = _safe_float_range(fps_prop)
-    if fps_range is not None:
-        fps_min, fps_max = fps_range
-        target_fps = max(fps_min, min(fps_max, mode.fps))
-        try:
-            prop_map.set_value(ic4.PropId.ACQUISITION_FRAME_RATE, target_fps)
-        except Exception:
-            pass
+    _set_frame_rate(prop_map, ic4, mode.fps)
 
     prop_map.set_value(ic4.PropId.EXPOSURE_AUTO, "Off")
     prop_map.set_value(ic4.PropId.EXPOSURE_TIME, float(exposure_us))
@@ -398,14 +413,13 @@ def probe_device(serial: str | None = None, ic4=None) -> tuple[ConnectedDeviceIn
 
         width_prop = _safe_find_integer(prop_map, "Width")
         height_prop = _safe_find_integer(prop_map, "Height")
-        fps_prop = _safe_find_float(prop_map, "AcquisitionFrameRate")
         exposure_prop = _safe_find_float(prop_map, "ExposureTime")
         pixel_format_prop = _safe_find_enumeration(prop_map, "PixelFormat")
 
         limits = {
             "width": _safe_integer_limits(width_prop),
             "height": _safe_integer_limits(height_prop),
-            "fps": _safe_float_limits(fps_prop),
+            "fps": _fps_limits_from_spec(),
             "exposure_us": _safe_float_limits(exposure_prop),
             "pixel_formats": []
             if pixel_format_prop is None

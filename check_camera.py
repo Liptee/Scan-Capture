@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import sys
 
+import tis_camera.ic4_backend as ic4_backend
 from tis_camera.ic4_backend import (
     BackendNotAvailableError,
     PlatformNotSupportedError,
@@ -50,6 +51,8 @@ def main() -> int:
         return 0
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        print(f"Backend: {ic4_backend.__file__}", file=sys.stderr)
+        print(f"Revision: {ic4_backend.BACKEND_REVISION}", file=sys.stderr)
         return 1
     finally:
         shutdown_library(ic4)
